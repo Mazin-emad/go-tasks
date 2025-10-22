@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -25,4 +26,13 @@ func WriteJson(w http.ResponseWriter, status int, v any) error {
 
 func WriteError(w http.ResponseWriter, status int, err error) error {
 	return WriteJson(w, status, map[string]string{"error": err.Error()})
+}
+
+// Gin-compatible utility functions
+func WriteJsonGin(c *gin.Context, status int, v any) {
+	c.JSON(status, v)
+}
+
+func WriteErrorGin(c *gin.Context, status int, err error) {
+	c.JSON(status, map[string]string{"error": err.Error()})
 }

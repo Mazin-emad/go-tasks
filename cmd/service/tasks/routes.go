@@ -9,7 +9,7 @@ import (
 	"github.com/Mazin-emad/todo-backend/config"
 	"github.com/Mazin-emad/todo-backend/types"
 	"github.com/Mazin-emad/todo-backend/utils"
-	"github.com/gorilla/mux"
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
@@ -20,42 +20,42 @@ func NewHandler(store types.TaskStore) *Handler {
 	return &Handler{store: store}
 }
 
-func (h *Handler) RegisterRoutes(router *mux.Router) {
-	router.HandleFunc("/tasks", h.handleCreateTask).Methods("POST")
-	router.HandleFunc("/tasks", h.handleGetTasks).Methods("GET")
-	router.HandleFunc("/tasks/{id}", h.handleDeleteTask).Methods("DELETE")
-	router.HandleFunc("/tasks/{id}", h.handleUpdateTask).Methods("PUT")
+func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
+	router.POST("/tasks", h.handleCreateTask)
+	router.GET("/tasks", h.handleGetTasks)
+	router.DELETE("/tasks/:id", h.handleDeleteTask)
+	router.PUT("/tasks/:id", h.handleUpdateTask)
 }
 
-func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleCreateTask(c *gin.Context) {
 	var payload types.CreateTaskPayload
-	if err := utils.ParseJson(r, &payload); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, err)
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		utils.WriteErrorGin(c, http.StatusBadRequest, err)
 		return
 	}
 
 	// validate the payload
 	if err := utils.Validate.Struct(payload); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid payload: %s", err.Error()))
+		utils.WriteErrorGin(c, http.StatusBadRequest, fmt.Errorf("invalid payload: %s", err.Error()))
 		return
 	}
 
-	authHeader := r.Header.Get("Authorization")
+	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
 		return
 	}
-
+	
 	// Extract token from "Bearer <token>" format
 	if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("invalid authorization header format"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("invalid authorization header format"))
 		return
 	}
 	
 	token := authHeader[7:] // Remove "Bearer " prefix
 	userID, err := auth.GetUserIDFromToken([]byte(config.ConfigAmigoo.JWTKey), token)
 	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, err)
 		return
 	}
 
@@ -67,149 +67,150 @@ func (h *Handler) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 
 	err = h.store.CreateTask(task)
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, err)
+		utils.WriteErrorGin(c, http.StatusInternalServerError, err)
 		return
 	}
-	utils.WriteJson(w, http.StatusCreated, task)
+	utils.WriteJsonGin(c, http.StatusCreated, map[string]string{"message": "Task created successfully"})
 }
 
-
-func (h *Handler) handleGetTasks(w http.ResponseWriter, r *http.Request) {
-	authHeader := r.Header.Get("Authorization")
+func (h *Handler) handleGetTasks(c *gin.Context) {
+	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
-		return
-	}
-	
-	token := authHeader[7:] // Remove "Bearer " prefix
-	userID, err := auth.GetUserIDFromToken([]byte(config.ConfigAmigoo.JWTKey), token)
-	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, err)
-		return
-	}
-
-	tasks, err := h.store.GetTasks(userID)
-	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, err)
-		return
-	}
-	utils.WriteJson(w, http.StatusOK, tasks)
-}
-
-
-func (h *Handler) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
-	
-	taskID, err := strconv.Atoi(id)
-	if err != nil {
-		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid task ID"))
-		return
-	}
-
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
 		return
 	}
 	
 	// Extract token from "Bearer <token>" format
 	if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("invalid authorization header format"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("invalid authorization header format"))
 		return
 	}
 	
 	token := authHeader[7:] // Remove "Bearer " prefix
 	userID, err := auth.GetUserIDFromToken([]byte(config.ConfigAmigoo.JWTKey), token)
 	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, err)
+		utils.WriteErrorGin(c, http.StatusUnauthorized, err)
+		return
+	}
+
+	tasks, err := h.store.GetTasks(userID)
+	if err != nil {
+		utils.WriteErrorGin(c, http.StatusInternalServerError, err)
+		return
+	}
+	
+	utils.WriteJsonGin(c, http.StatusOK, map[string]any{"tasks": tasks})
+}
+
+func (h *Handler) handleDeleteTask(c *gin.Context) {
+	id := c.Param("id")
+	
+	// Convert string ID to integer
+	taskID, err := strconv.Atoi(id)
+	if err != nil {
+		utils.WriteErrorGin(c, http.StatusBadRequest, fmt.Errorf("invalid task ID"))
+		return
+	}
+
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		return
+	}
+	
+	// Extract token from "Bearer <token>" format
+	if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("invalid authorization header format"))
+		return
+	}
+	
+	token := authHeader[7:] // Remove "Bearer " prefix
+	userID, err := auth.GetUserIDFromToken([]byte(config.ConfigAmigoo.JWTKey), token)
+	if err != nil {
+		utils.WriteErrorGin(c, http.StatusUnauthorized, err)
 		return
 	}
 
 	// Check if the task belongs to the user
 	task, err := h.store.GetTaskByID(taskID)
 	if err != nil {
-		utils.WriteError(w, http.StatusNotFound, fmt.Errorf("task not found"))
+		utils.WriteErrorGin(c, http.StatusNotFound, fmt.Errorf("task not found"))
 		return
 	}
 
 	if task.UserID != userID {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
 		return
 	}
 
 	err = h.store.DeleteTask(taskID)
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, err)
+		utils.WriteErrorGin(c, http.StatusInternalServerError, err)
 		return
 	}
-	utils.WriteJson(w, http.StatusOK, map[string]string{"message": "Task deleted successfully"})
+	utils.WriteJsonGin(c, http.StatusOK, map[string]string{"message": "Task deleted successfully"})
 }
 
-func (h *Handler) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
+func (h *Handler) handleUpdateTask(c *gin.Context) {
+	id := c.Param("id")
 	
 	// Convert string ID to integer
 	taskID, err := strconv.Atoi(id)
 	if err != nil {
-		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid task ID"))
+		utils.WriteErrorGin(c, http.StatusBadRequest, fmt.Errorf("invalid task ID"))
 		return
 	}
 	
 	var payload types.UpdateTaskPayload
-	if err := utils.ParseJson(r, &payload); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, err)
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		utils.WriteErrorGin(c, http.StatusBadRequest, err)
 		return
 	}
 
 	// validate the payload
 	if err := utils.Validate.Struct(payload); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid payload: %s", err.Error()))
+		utils.WriteErrorGin(c, http.StatusBadRequest, fmt.Errorf("invalid payload: %s", err.Error()))
 		return
 	}
 
-	authHeader := r.Header.Get("Authorization")
+	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
 		return
 	}
 	
 	// Extract token from "Bearer <token>" format
 	if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		utils.WriteError(w, http.StatusUnauthorized, fmt.Errorf("invalid authorization header format"))
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("invalid authorization header format"))
 		return
 	}
 	
 	token := authHeader[7:] // Remove "Bearer " prefix
 	userID, err := auth.GetUserIDFromToken([]byte(config.ConfigAmigoo.JWTKey), token)
 	if err != nil {
-		utils.WriteError(w, http.StatusUnauthorized, err)
+		utils.WriteErrorGin(c, http.StatusUnauthorized, err)
 		return
 	}
 
-	task := &types.Task{
-		ID: taskID,
-		Title: payload.Title,
-		Completed: payload.Completed,
-		UserID: userID,
+	// Check if the task belongs to the user
+	task, err := h.store.GetTaskByID(taskID)
+	if err != nil {
+		utils.WriteErrorGin(c, http.StatusNotFound, fmt.Errorf("task not found"))
+		return
 	}
+
+	if task.UserID != userID {
+		utils.WriteErrorGin(c, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		return
+	}
+
+	task.Title = payload.Title
+	task.Completed = payload.Completed
 
 	err = h.store.UpdateTask(task)
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, err)
+		utils.WriteErrorGin(c, http.StatusInternalServerError, err)
 		return
 	}
-	utils.WriteJson(w, http.StatusOK, map[string]string{"message": "Task updated successfully"})
+	utils.WriteJsonGin(c, http.StatusOK, map[string]string{"message": "Task updated successfully"})
 }
-
-
-
-
-
-
-
-
-
-
-

@@ -1,6 +1,9 @@
 build:
 	@go build -o todo-backend cmd/main.go
 
+build-prod:
+	@go build -tags netgo -ldflags '-s -w' -o app cmd/main.go
+
 run: build
 	@./todo-backend
 

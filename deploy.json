@@ -1,0 +1,8 @@
+{
+  "build": {
+    "command": "go build -tags netgo -ldflags '-s -w' -o app ./cmd/main.go",
+    "start": "./app"
+  },
+  "framework": "go",
+  "port": 4001
+}

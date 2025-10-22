@@ -30,4 +30,4 @@ USER appuser
 
 EXPOSE 4001
 
-CMD ["./todo-backend/cmd"]
+CMD ["./todo-backend"]
